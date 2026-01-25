@@ -1,3 +1,16 @@
+"""
+🚀 No-Code AutoML Builder
+Author: Gaurav
+Purpose:
+- Upload data
+- Explore it visually
+- Clean it consciously
+- Detect anomalies responsibly
+- Train the best ML model automatically
+
+Designed to be readable, explainable, and interview-ready.
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,38 +18,49 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 
+# ML utilities
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
+
+# Models
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    RandomForestRegressor,
+    IsolationForest
+)
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.metrics import accuracy_score, r2_score
 
-from fpdf import FPDF
+# ---------------- APP CONFIG ----------------
+st.set_page_config(page_title="AutoML Builder", layout="wide")
+st.title("🚀 No-Code AutoML Builder")
+st.caption("EDA → Cleaning → Anomaly Detection → Modeling")
 
-# ---------------- CONFIG ----------------
-st.set_page_config("AutoML Builder", layout="wide")
-st.title("🚀 No-Code AutoML Builder with Advanced EDA")
+# ---------------- DATA UPLOAD ----------------
+uploaded_file = st.file_uploader("📂 Upload your CSV file", type="csv")
 
-# ---------------- FILE UPLOAD ----------------
-uploaded = st.file_uploader("Upload CSV", type="csv")
+if uploaded_file:
 
-if uploaded:
-    df = pd.read_csv(uploaded)
+    # Load data
+    raw_data = pd.read_csv(uploaded_file)
 
-    st.subheader("📄 Data Preview")
-    st.dataframe(df.head())
+    st.subheader("👀 Quick Data Preview")
+    st.dataframe(raw_data.head())
 
-    # ---------------- DATA CLEANING ----------------
+    # =========================================================
+    # 🧹 DATA CLEANING (USER-CONTROLLED)
+    # =========================================================
     st.header("🧹 Data Cleaning")
 
-    cleaning_method = st.selectbox(
-        "Handle Missing Values",
+    cleaning_strategy = st.selectbox(
+        "How should missing values be handled?",
         [
-            "None",
-            "Drop rows with nulls",
+            "Do nothing",
+            "Drop rows with missing values",
             "Impute Mean",
             "Impute Median",
             "Impute Min",
@@ -45,201 +69,232 @@ if uploaded:
         ]
     )
 
-    remove_zero = st.checkbox("Remove rows with zero values (numeric only)")
+    remove_zero_rows = st.checkbox(
+        "Remove rows containing zero values (numeric columns only)"
+    )
 
-    df_clean = df.copy()
+    cleaned_data = raw_data.copy()
 
-    if cleaning_method == "Drop rows with nulls":
-        df_clean = df_clean.dropna()
+    # ---- Handle missing values ----
+    if cleaning_strategy == "Drop rows with missing values":
+        cleaned_data.dropna(inplace=True)
 
-    elif cleaning_method.startswith("Impute"):
-        for col in df_clean.columns:
-            if df_clean[col].dtype != "object":
-                if cleaning_method == "Impute Min":
-                    df_clean[col].fillna(df_clean[col].min(), inplace=True)
-                elif cleaning_method == "Impute Max":
-                    df_clean[col].fillna(df_clean[col].max(), inplace=True)
-                elif cleaning_method == "Impute Mean":
-                    df_clean[col].fillna(df_clean[col].mean(), inplace=True)
-                elif cleaning_method == "Impute Median":
-                    df_clean[col].fillna(df_clean[col].median(), inplace=True)
+    elif cleaning_strategy != "Do nothing":
+        for column in cleaned_data.columns:
+            if cleaned_data[column].dtype != "object":
+                if cleaning_strategy == "Impute Mean":
+                    cleaned_data[column].fillna(cleaned_data[column].mean(), inplace=True)
+                elif cleaning_strategy == "Impute Median":
+                    cleaned_data[column].fillna(cleaned_data[column].median(), inplace=True)
+                elif cleaning_strategy == "Impute Min":
+                    cleaned_data[column].fillna(cleaned_data[column].min(), inplace=True)
+                elif cleaning_strategy == "Impute Max":
+                    cleaned_data[column].fillna(cleaned_data[column].max(), inplace=True)
             else:
-                df_clean[col].fillna(df_clean[col].mode()[0], inplace=True)
+                cleaned_data[column].fillna(cleaned_data[column].mode()[0], inplace=True)
 
-    if remove_zero:
-        num_cols = df_clean.select_dtypes(include="number").columns
-        df_clean = df_clean[(df_clean[num_cols] != 0).all(axis=1)]
+    # ---- Remove zero rows ----
+    if remove_zero_rows:
+        numeric_columns = cleaned_data.select_dtypes(include="number").columns
+        cleaned_data = cleaned_data[(cleaned_data[numeric_columns] != 0).all(axis=1)]
 
-    st.success(f"Cleaned Dataset Shape: {df_clean.shape}")
+    st.success(f"✅ Cleaned dataset shape: {cleaned_data.shape}")
 
-    # ---------------- BASIC EDA ----------------
+    # =========================================================
+    # 🔍 EXPLORATORY DATA ANALYSIS
+    # =========================================================
     st.header("🔍 Exploratory Data Analysis")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Rows", df_clean.shape[0])
-    col2.metric("Columns", df_clean.shape[1])
-    col3.metric("Missing %", round(df_clean.isna().mean().mean()*100, 2))
-
-    num_cols = df_clean.select_dtypes(include="number").columns.tolist()
-    cat_cols = df_clean.select_dtypes(exclude="number").columns.tolist()
-
-    # ---------------- ADVANCED EDA (BUTTONS) ----------------
-    if st.button("📌 Missing Values Plot"):
-        fig, ax = plt.subplots()
-        df_clean.isna().sum().plot(kind="bar", ax=ax)
-        ax.set_title("Missing Values")
-        st.pyplot(fig)
-
-    if st.button("📦 Boxplots (Outliers)"):
-        for col in num_cols:
-            fig, ax = plt.subplots()
-            sns.boxplot(x=df_clean[col], ax=ax)
-            ax.set_title(col)
-            st.pyplot(fig)
-
-    if st.button("🔗 Pairplot (Sampled)"):
-        sample_df = df_clean[num_cols].sample(min(300, len(df_clean)))
-        fig = sns.pairplot(sample_df)
-        st.pyplot(fig)
-
-    if st.button("📊 Categorical Value Counts"):
-        for col in cat_cols:
-            fig, ax = plt.subplots()
-            df_clean[col].value_counts().plot(kind="bar", ax=ax)
-            ax.set_title(col)
-            st.pyplot(fig)
-
-    # ---------------- TARGET vs FEATURE ----------------
-    st.header("🎯 Target vs Feature")
-
-    target_eda = st.selectbox("Select Target", df_clean.columns)
-    feature_eda = st.selectbox("Select Feature", df_clean.columns)
-
-    if st.button("📈 Show Relationship"):
-        fig, ax = plt.subplots()
-        if df_clean[target_eda].dtype != "object":
-            sns.scatterplot(x=df_clean[feature_eda], y=df_clean[target_eda], ax=ax)
-        else:
-            sns.boxplot(x=df_clean[feature_eda], y=df_clean[target_eda], ax=ax)
-        st.pyplot(fig)
-
-    # ---------------- CUSTOM VISUAL BUILDER ----------------
-    st.header("🎨 Custom Visualization Builder")
-
-    x_var = st.selectbox("X Variable", df_clean.columns)
-    y_var = st.selectbox("Y Variable (Optional)", ["None"] + df_clean.columns.tolist())
-    chart_type = st.selectbox(
-        "Chart Type",
-        ["Histogram", "Boxplot", "Scatter", "Bar", "Line"]
+    col1.metric("Rows", cleaned_data.shape[0])
+    col2.metric("Columns", cleaned_data.shape[1])
+    col3.metric(
+        "Missing %",
+        round(cleaned_data.isna().mean().mean() * 100, 2)
     )
 
-    if st.button("🎬 Generate Chart"):
-        fig, ax = plt.subplots()
-        if chart_type == "Histogram":
-            sns.histplot(df_clean[x_var], kde=True, ax=ax)
-        elif chart_type == "Boxplot":
-            sns.boxplot(x=df_clean[x_var], ax=ax)
-        elif chart_type == "Scatter" and y_var != "None":
-            sns.scatterplot(x=df_clean[x_var], y=df_clean[y_var], ax=ax)
-        elif chart_type == "Bar" and y_var != "None":
-            sns.barplot(x=df_clean[x_var], y=df_clean[y_var], ax=ax)
-        elif chart_type == "Line" and y_var != "None":
-            ax.plot(df_clean[x_var], df_clean[y_var])
-        st.pyplot(fig)
+    numeric_cols = cleaned_data.select_dtypes(include="number").columns.tolist()
+    categorical_cols = cleaned_data.select_dtypes(exclude="number").columns.tolist()
 
-    # ---------------- PDF EXPORT ----------------
-    if st.button("📥 Download EDA PDF"):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=10)
-        pdf.cell(200, 10, "EDA Report", ln=True)
-        pdf.cell(200, 8, f"Rows: {df_clean.shape[0]}", ln=True)
-        pdf.cell(200, 8, f"Columns: {df_clean.shape[1]}", ln=True)
-        pdf.output("eda_report.pdf")
+    if st.button("📦 Show Boxplots (Outlier Preview)"):
+        for col in numeric_cols:
+            fig, ax = plt.subplots()
+            sns.boxplot(x=cleaned_data[col], ax=ax)
+            ax.set_title(f"Boxplot: {col}")
+            st.pyplot(fig)
 
-        with open("eda_report.pdf", "rb") as f:
-            st.download_button("Download PDF", f, "eda_report.pdf")
+    # =========================================================
+    # 🚨 ANOMALY DETECTION (PRE-MODEL)
+    # =========================================================
+    st.header("🚨 Anomaly Detection")
 
-    # ---------------- AutoML ----------------
+    anomaly_method = st.selectbox(
+        "Choose anomaly detection method",
+        ["None", "Isolation Forest", "Local Outlier Factor", "Z-Score"]
+    )
+
+    contamination_rate = st.slider(
+        "Expected % of anomalies",
+        min_value=1,
+        max_value=20,
+        value=5
+    ) / 100
+
+    drop_anomalies = st.checkbox("Remove detected anomalies before modeling")
+
+    anomaly_ready_data = cleaned_data.copy()
+
+    if anomaly_method != "None" and len(numeric_cols) > 0:
+
+        numeric_data = cleaned_data[numeric_cols]
+
+        if anomaly_method == "Isolation Forest":
+            detector = IsolationForest(
+                contamination=contamination_rate,
+                random_state=42
+            )
+            anomaly_ready_data["anomaly_flag"] = detector.fit_predict(numeric_data)
+
+        elif anomaly_method == "Local Outlier Factor":
+            detector = LocalOutlierFactor(contamination=contamination_rate)
+            anomaly_ready_data["anomaly_flag"] = detector.fit_predict(numeric_data)
+
+        elif anomaly_method == "Z-Score":
+            z_scores = np.abs((numeric_data - numeric_data.mean()) / numeric_data.std())
+            anomaly_ready_data["anomaly_flag"] = np.where(
+                (z_scores > 3).any(axis=1), -1, 1
+            )
+
+        anomaly_count = (anomaly_ready_data["anomaly_flag"] == -1).sum()
+        st.warning(f"⚠️ Detected anomalies: {anomaly_count}")
+
+        if st.button("📊 Visualise Anomalies"):
+            if len(numeric_cols) >= 2:
+                fig, ax = plt.subplots()
+                sns.scatterplot(
+                    x=anomaly_ready_data[numeric_cols[0]],
+                    y=anomaly_ready_data[numeric_cols[1]],
+                    hue=anomaly_ready_data["anomaly_flag"],
+                    palette={1: "blue", -1: "red"},
+                    ax=ax
+                )
+                ax.set_title("Anomaly Distribution")
+                st.pyplot(fig)
+
+        if drop_anomalies:
+            cleaned_data = (
+                anomaly_ready_data[anomaly_ready_data["anomaly_flag"] == 1]
+                .drop(columns="anomaly_flag")
+            )
+            st.success(f"🧹 Data after anomaly removal: {cleaned_data.shape}")
+
+    # =========================================================
+    # 🤖 AutoML MODEL BUILDER
+    # =========================================================
     st.header("🤖 AutoML Model Builder")
 
-    target = st.selectbox("Select Target Column", df_clean.columns)
-    X = df_clean.drop(columns=[target])
-    y = df_clean[target]
+    target_column = st.selectbox("Select target variable", cleaned_data.columns)
 
-    task = st.radio("Task Type", ["Regression", "Classification"])
-    scale = st.selectbox("Scaling Method", ["None", "Standard", "MinMax"])
+    X = cleaned_data.drop(columns=[target_column])
+    y = cleaned_data[target_column]
 
-    num_features = X.select_dtypes(include="number").columns.tolist()
-    cat_features = X.select_dtypes(exclude="number").columns.tolist()
+    problem_type = st.radio("Problem type", ["Regression", "Classification"])
+    scaling_choice = st.selectbox("Scaling method", ["None", "Standard", "MinMax"])
 
-    num_pipeline = [("imputer", SimpleImputer(strategy="median"))]
-    if scale == "Standard":
-        num_pipeline.append(("scaler", StandardScaler()))
-    elif scale == "MinMax":
-        num_pipeline.append(("scaler", MinMaxScaler()))
+    numeric_features = X.select_dtypes(include="number").columns.tolist()
+    categorical_features = X.select_dtypes(exclude="number").columns.tolist()
 
-    preprocessor = ColumnTransformer([
-        ("num", Pipeline(num_pipeline), num_features),
-        ("cat", Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore"))
-        ]), cat_features)
-    ])
+    # ---- Numeric pipeline ----
+    numeric_pipeline = [("imputer", SimpleImputer(strategy="median"))]
 
+    if scaling_choice == "Standard":
+        numeric_pipeline.append(("scaler", StandardScaler()))
+    elif scaling_choice == "MinMax":
+        numeric_pipeline.append(("scaler", MinMaxScaler()))
+
+    # ---- Full preprocessing ----
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", Pipeline(numeric_pipeline), numeric_features),
+            (
+                "cat",
+                Pipeline([
+                    ("imputer", SimpleImputer(strategy="most_frequent")),
+                    ("encoder", OneHotEncoder(handle_unknown="ignore"))
+                ]),
+                categorical_features
+            )
+        ]
+    )
+
+    # ---- Model zoo ----
     models = (
         {
             "Linear Regression": (LinearRegression(), {}),
-            "Random Forest": (RandomForestRegressor(), {
-                "model__n_estimators": [100, 200],
-                "model__max_depth": [None, 10]
-            })
+            "Random Forest Regressor": (
+                RandomForestRegressor(),
+                {"model__n_estimators": [100, 200], "model__max_depth": [None, 10]}
+            )
         }
-        if task == "Regression"
+        if problem_type == "Regression"
         else
         {
-            "Logistic Regression": (LogisticRegression(max_iter=1000), {
-                "model__C": [0.1, 1, 10]
-            }),
-            "Random Forest": (RandomForestClassifier(), {
-                "model__n_estimators": [100, 200],
-                "model__max_depth": [None, 10]
-            })
+            "Logistic Regression": (
+                LogisticRegression(max_iter=1000),
+                {"model__C": [0.1, 1, 10]}
+            ),
+            "Random Forest Classifier": (
+                RandomForestClassifier(),
+                {"model__n_estimators": [100, 200], "model__max_depth": [None, 10]}
+            )
         }
     )
 
     if st.button("🚀 Run AutoML"):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
 
-        results, best_score, best_model = {}, -999, None
+        model_scores = {}
+        best_model = None
+        best_score = -np.inf
 
-        for name, (model, params) in models.items():
-            pipe = Pipeline([
-                ("preprocessor", preprocessor),
+        for model_name, (model, params) in models.items():
+            pipeline = Pipeline([
+                ("preprocessing", preprocessor),
                 ("model", model)
             ])
 
-            gs = GridSearchCV(
-                pipe,
+            search = GridSearchCV(
+                pipeline,
                 params,
                 cv=3,
-                scoring="r2" if task == "Regression" else "accuracy"
+                scoring="r2" if problem_type == "Regression" else "accuracy"
             )
 
-            gs.fit(X_train, y_train)
-            preds = gs.predict(X_test)
+            search.fit(X_train, y_train)
+            predictions = search.predict(X_test)
 
-            score = r2_score(y_test, preds) if task == "Regression" else accuracy_score(y_test, preds)
-            results[name] = score
+            score = (
+                r2_score(y_test, predictions)
+                if problem_type == "Regression"
+                else accuracy_score(y_test, predictions)
+            )
+
+            model_scores[model_name] = score
 
             if score > best_score:
                 best_score = score
-                best_model = gs.best_estimator_
+                best_model = search.best_estimator_
 
-        st.subheader("🏆 Model Comparison")
-        st.bar_chart(results)
-        st.success(f"Best Model Score: {round(best_score, 3)}")
+        st.subheader("🏆 Model Performance")
+        st.bar_chart(model_scores)
+        st.success(f"Best model score: {round(best_score, 3)}")
 
         joblib.dump(best_model, "best_model.pkl")
-        with open("best_model.pkl", "rb") as f:
-            st.download_button("⬇ Download Best Model", f, "best_model.pkl")
+        with open("best_model.pkl", "rb") as file:
+            st.download_button(
+                "⬇️ Download Best Model",
+                file,
+                file_name="best_model.pkl"
+            )
