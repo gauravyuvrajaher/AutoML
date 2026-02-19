@@ -1,5 +1,5 @@
 """
-🚀 No-Code AutoML Builder
+🚀AutoML Builder
 Author: Gaurav
 Purpose:
 - Upload data
@@ -12,6 +12,15 @@ Designed to be readable, explainable, and interview-ready.
 """
 
 import streamlit as st
+# Add custom CSS to hide the GitHub icon
+hide_github_icon = """
+#GithubIcon {
+  visibility: hidden;
+}
+"""
+st.markdown(hide_github_icon, unsafe_allow_html=True)
+
+# Your app code goes here
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
